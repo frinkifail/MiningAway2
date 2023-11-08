@@ -5,7 +5,6 @@ from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island, json
 from time import sleep
 import socketio
-from PyHotKey import Key, keyboard_manager
 
 colorama.init(autoreset=True)
 gts = lambda: os.get_terminal_size()
@@ -175,7 +174,6 @@ def game():
                     main_menu()
                     break
 
-    keyboard_manager.register_hotkey(["m"], None, open_menu)
     while True:
         timer += 1
         clear()
