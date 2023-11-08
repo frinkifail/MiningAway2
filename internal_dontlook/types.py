@@ -11,10 +11,11 @@ class MaterialData(TypedDict):
 class IslandData(TypedDict):
     money: float
     materials: MaterialData
+    players: list[str]
 
 
 DEFAULT_DATA = IslandData(
-    money=0, materials=MaterialData(coal=0, iron=0, gold=0, diamonds=0)
+    money=0, materials=MaterialData(coal=0, iron=0, gold=0, diamonds=0), players=[]
 )
 
 material_values = {  # value, ???
