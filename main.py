@@ -22,6 +22,11 @@ sio = socketio.Client()  # type: ignore
 
 username = "<unset>"
 
+if os.path.exists("isSocketDebugEnabled"):
+    SOCKET_DEBUG = True
+else:
+    SOCKET_DEBUG = False
+
 
 def read(f: str):
     fh = open(f)
@@ -72,7 +77,7 @@ def play():
     if world_name == "@":
         world_name = "!localhost"
     if world_name.startswith("!"):
-        sio.connect(f"http://{world_name.replace('!', '')}:9211")
+        sio.connect(f"http://{world_name.replace('!', '')}")
         game()
     if not os.path.exists(f"islands/{world_name}"):
         create_island(world_name)
@@ -103,6 +108,9 @@ def game():
 
         @sio.on("RefreshData")
         def temprd(d: IslandData):
+            if SOCKET_DEBUG:
+                print(f"AllRefreshData: {d}")
+                input()
             global world_data
             world_data = d
 
@@ -119,6 +127,9 @@ def game():
 
     @sio.on("PlayerResourceChange")
     def plr_rc(d: dict):
+        if SOCKET_DEBUG:
+            print(f"PlayerResourceChange: {d}")
+            input()
         if d["isTopLevel"]:
             data[d["resource"]] = d["to"]
         else:
@@ -126,6 +137,9 @@ def game():
 
     @sio.on("PlayerConnect")
     def plr_cn(d: dict):
+        if SOCKET_DEBUG:
+            print(f"PlayerConnect: {d}")
+            input()
         nonlocal print_txt, wait_ticks
         if d["state"] == "error":
             return
@@ -135,6 +149,9 @@ def game():
 
     @sio.on("PlayerDisconnect")
     def plr_dcn(d: dict):
+        if SOCKET_DEBUG:
+            print(f"PlayerDisconnect: {d}")
+            input()
         nonlocal print_txt, wait_ticks, kill
         if d["state"] == "error":
             return
