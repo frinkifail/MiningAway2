@@ -5,6 +5,7 @@ from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island, json
 from time import sleep
 import socketio
+import keyboard as kb
 
 colorama.init(autoreset=True)
 gts = lambda: os.get_terminal_size()
@@ -58,7 +59,7 @@ def play():
     print(colorama.Fore.BLUE + "< Play")
     print(
         colorama.Fore.LIGHTBLACK_EX
-        + "Type in your world name\nPut `!` at the front to mark it as a server and not a local world"
+        + "Type in your world name\nPut `!` at the front to mark it as a server and not a local world\nType `@` to make it localhost (mostly used for dev stuff)"
     )
     world_name = input(": ")
 
@@ -68,6 +69,8 @@ def play():
         currentserverid = world_name
         game()
 
+    if world_name == "@":
+        world_name = "!localhost"
     if world_name.startswith("!"):
         sio.connect(f"http://{world_name.replace('!', '')}:9211")
         game()
@@ -146,8 +149,12 @@ def game():
     timer = 0
     print_txt: str | None = None
     wait_ticks = 0
+    pause: bool = False
+    kill: bool = False
 
     def open_menu():
+        nonlocal pause, kill
+        pause = True
         clear()
         print(colorama.Fore.GREEN + "-- MENU --".center(th()))
         print()
@@ -162,19 +169,33 @@ def game():
             inp = input("% ").lower()
             match inp:
                 case "resume":
+                    pause = False
                     break
                 case "settings":
                     sio.emit("PlayerDisconnect", username)
                     sio.disconnect()
+                    print("Disconnecting...")
+                    sleep(1)
                     settings()
+                    kill = True
                     break
                 case "disconnect":
                     sio.emit("PlayerDisconnect", username)
                     sio.disconnect()
+                    print("Disconnecting...")
+                    sleep(1)
                     main_menu()
+                    kill = True
                     break
 
+    kb.register_hotkey("m", open_menu)
+
     while True:
+        if pause:
+            continue
+        if kill:
+            kb.clear_all_hotkeys()
+            break
         timer += 1
         clear()
         print("Connected players:")
