@@ -5,7 +5,7 @@ from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island, json
 from time import sleep
 import socketio
-import keyboard as kb
+import keyboard as kb  # type: ignore
 
 colorama.init(autoreset=True)
 gts = lambda: os.get_terminal_size()
