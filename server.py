@@ -1,5 +1,7 @@
 from json import load
 from os.path import exists
+from threading import Thread
+from time import sleep
 import eventlet
 import socketio
 from internal_dontlook.types import DEFAULT_DATA, IslandData
@@ -7,6 +9,9 @@ from internal_dontlook.islands import create_island
 
 sio = socketio.Server()  # type: ignore
 app = socketio.WSGIApp(sio)  # type: ignore
+
+TICK_DELAY = 0.2
+game_thread: Thread | None = None
 
 island_data: IslandData = None  # type: ignore
 hostid: str = "admin"
@@ -31,6 +36,20 @@ else:
     print("> Aborted")
     exit()
 
+kill_game_loop: bool = False
+
+
+def game_loop():
+    while True:
+        if kill_game_loop:
+            break
+        island_data["money"] += 1
+        sio.emit(
+            "PlayerResourceChange",
+            {"isTopLevel": True, "resource": "money", "to": island_data["money"]},
+        )
+        sleep(TICK_DELAY)
+
 
 @sio.event
 def connect(sid, environ):
@@ -42,9 +61,11 @@ def connect(sid, environ):
 
 @sio.on("PlayerConnect")
 def login(sid, data: str):
+    global game_thread
     if data == hostid:
         # sio.emit()
-        pass
+        game_thread = Thread(None, game_loop, "Game Loop")
+        game_thread.start()
     if data in island_data["players"]:
         sio.emit("PlayerConnect", {"state": "error", "error": "AlreadyInServer"})
         return
@@ -55,8 +76,10 @@ def login(sid, data: str):
 
 @sio.on("PlayerDisconnect")
 def logout(sid, data: str):
+    global kill_game_loop
     if data == hostid:
         sio.emit("PlayerDisconnect", {"state": "host"})
+        kill_game_loop = True
         quit()
     try:
         island_data["players"].remove(data)

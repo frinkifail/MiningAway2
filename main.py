@@ -135,8 +135,14 @@ def game():
 
     @sio.on("PlayerDisconnect")
     def plr_dcn(d: dict):
-        nonlocal print_txt, wait_ticks
+        nonlocal print_txt, wait_ticks, kill
         if d["state"] == "error":
+            return
+        if d["state"] == "host":
+            kill = True
+            print("> Host disconnected")
+            sleep(2)
+            main_menu()
             return
         try:
             data["players"].remove(d["who"])
@@ -178,6 +184,7 @@ def game():
                     sleep(1)
                     settings()
                     kill = True
+                    data["players"].remove(username)
                     break
                 case "disconnect":
                     sio.emit("PlayerDisconnect", username)
@@ -186,9 +193,10 @@ def game():
                     sleep(1)
                     main_menu()
                     kill = True
+                    data["players"].remove(username)
                     break
 
-    kb.register_hotkey("m", open_menu)
+    kb.register_hotkey("m", open_menu, suppress=True)
 
     while True:
         if pause:
