@@ -5,7 +5,7 @@ from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island, json
 from time import sleep
 import socketio
-import keyboard as kb  # type: ignore
+import keyboard as kb
 
 colorama.init(autoreset=True)
 gts = lambda: os.get_terminal_size()
@@ -18,7 +18,7 @@ is_local: bool = False
 
 TICK_DELAY = 0.2
 
-sio = socketio.Client()  # type: ignore
+sio = socketio.Client()
 
 username = "<unset>"
 
@@ -75,9 +75,18 @@ def play():
         game()
 
     if world_name == "@":
-        world_name = "!localhost"
+        world_name = "!localhost:9211"
     if world_name.startswith("!"):
-        sio.connect(f"http://{world_name.replace('!', '')}")
+        try:
+            sio.connect(f"http://{world_name.replace('!', '')}")
+        except socketio.exceptions.ConnectionError as e:  # type: ignore
+            simplified_str = "unknown"
+            estr = str(e)
+            if "max retries" in estr.lower():
+                simplified_str = "failed to connect, max retries exceeded (probably incorrect server address)"
+            else:
+                simplified_str = estr
+            print(f"> Connection failed: {simplified_str}")
         game()
     if not os.path.exists(f"islands/{world_name}"):
         create_island(world_name)
@@ -104,13 +113,20 @@ def game():
     # )  # TODO: replace this with grabbing server data or socket or smth whatever
     # sio.connect("http://localhost:9211")
     if not is_local:
-        sio.emit("RefreshData", {"all": True})
+        try:
+            sio.emit("RefreshData", {"all": True})
+        except socketio.exceptions.BadNamespaceError:  # type: ignore
+            print("> Failed to connect to server")
+            sleep(2)
+            main_menu()
+            return
 
         @sio.on("RefreshData")
         def temprd(d: IslandData):
-            if SOCKET_DEBUG:
-                print(f"AllRefreshData: {d}")
-                input()
+            # nonlocal pause
+            # if SOCKET_DEBUG:
+            #     print(f"AllRefreshData: {d}")
+            #     input()
             global world_data
             world_data = d
 
@@ -127,9 +143,12 @@ def game():
 
     @sio.on("PlayerResourceChange")
     def plr_rc(d: dict):
+        nonlocal pause
         if SOCKET_DEBUG:
+            pause = True
             print(f"PlayerResourceChange: {d}")
             input()
+            pause = False
         if d["isTopLevel"]:
             data[d["resource"]] = d["to"]
         else:
@@ -137,9 +156,12 @@ def game():
 
     @sio.on("PlayerConnect")
     def plr_cn(d: dict):
+        nonlocal pause
         if SOCKET_DEBUG:
+            pause = True
             print(f"PlayerConnect: {d}")
             input()
+            pause = False
         nonlocal print_txt, wait_ticks
         if d["state"] == "error":
             return
@@ -149,13 +171,17 @@ def game():
 
     @sio.on("PlayerDisconnect")
     def plr_dcn(d: dict):
+        nonlocal pause
         if SOCKET_DEBUG:
+            pause = True
             print(f"PlayerDisconnect: {d}")
             input()
+            pause = False
         nonlocal print_txt, wait_ticks, kill
         if d["state"] == "error":
             return
         if d["state"] == "host":
+            sio.disconnect()
             kill = True
             print("> Host disconnected")
             sleep(2)
@@ -195,22 +221,14 @@ def game():
                     pause = False
                     break
                 case "settings":
-                    sio.emit("PlayerDisconnect", username)
-                    sio.disconnect()
-                    print("Disconnecting...")
-                    sleep(1)
-                    settings()
                     kill = True
-                    data["players"].remove(username)
+                    sleep(0.2)
+                    settings()
                     break
                 case "disconnect":
-                    sio.emit("PlayerDisconnect", username)
-                    sio.disconnect()
-                    print("Disconnecting...")
-                    sleep(1)
-                    main_menu()
                     kill = True
-                    data["players"].remove(username)
+                    sleep(0.2)
+                    main_menu()
                     break
 
     kb.register_hotkey("m", open_menu, suppress=True)
@@ -220,6 +238,11 @@ def game():
             continue
         if kill:
             kb.clear_all_hotkeys()
+            sio.emit("PlayerDisconnect", username)
+            sio.disconnect()
+            data["players"].remove(username)
+            print("Disconnecting...")
+            sleep(1)
             break
         timer += 1
         clear()

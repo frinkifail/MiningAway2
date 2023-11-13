@@ -7,8 +7,8 @@ import socketio
 from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island
 
-sio = socketio.Server()  # type: ignore
-app = socketio.WSGIApp(sio)  # type: ignore
+sio = socketio.Server()
+app = socketio.WSGIApp(sio)
 
 TICK_DELAY = 0.2
 game_thread: Thread | None = None
@@ -29,7 +29,7 @@ if v := input(
             exit()
         f = open(f"islands/{v}/data.json")
         island_data = load(f)
-        print(island_data)
+        # print(island_data)
         f.close()
         del f
 else:
@@ -38,10 +38,14 @@ else:
 
 kill_game_loop: bool = False
 
+sid_usernames: dict[str, str] = {}
+disconnected_properly: list[str] = []
+
 
 def game_loop():
     while True:
         if kill_game_loop:
+            print("> killed game loop")
             break
         island_data["money"] += 1
         sio.emit(
@@ -61,6 +65,7 @@ def connect(sid, environ):
 
 @sio.on("PlayerConnect")
 def login(sid, data: str):
+    sid_usernames.update({sid: data})
     global game_thread
     if data == hostid:
         # sio.emit()
@@ -74,18 +79,23 @@ def login(sid, data: str):
     sio.emit("PlayerConnect", {"state": "success", "who": data})
 
 
-@sio.on("PlayerDisconnect")
-def logout(sid, data: str):
+def proper_disconnect(username: str):
     global kill_game_loop
-    if data == hostid:
+    if username == hostid:
         sio.emit("PlayerDisconnect", {"state": "host"})
         kill_game_loop = True
         quit()
     try:
-        island_data["players"].remove(data)
-        sio.emit("PlayerDisconnect", {"state": "success", "who": data})
+        island_data["players"].remove(username)
+        sio.emit("PlayerDisconnect", {"state": "success", "who": username})
     except ValueError:
         sio.emit("PlayerDisconnect", {"state": "error", "error": "NotInServer"})
+
+
+@sio.on("PlayerDisconnect")
+def logout(sid, data: str):
+    disconnected_properly.append(sid)
+    proper_disconnect(data)
 
 
 @sio.on("PlayerResourceChange")
@@ -110,7 +120,13 @@ def rd(sid: str, key: dict):
 
 @sio.event
 def disconnect(sid):
-    pass
+    if sid not in disconnected_properly:
+        user = sid_usernames.get(sid)
+        if user == None:
+            print(f"> Username for {sid} not found")
+            return
+        print(f"> {user} didn't disconnect properly")
+        proper_disconnect(user)
 
 
 eventlet.wsgi.server(eventlet.listen(("", 9211)), app)  # type: ignore
