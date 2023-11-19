@@ -3,9 +3,10 @@ import colorama
 import random
 from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island, json
-from time import sleep
+from asyncio import run, sleep
 import socketio
 import keyboard as kb
+import aiofiles
 
 colorama.init(autoreset=True)
 gts = lambda: os.get_terminal_size()
@@ -18,7 +19,7 @@ is_local: bool = False
 
 TICK_DELAY = 0.2
 
-sio = socketio.Client()
+sio = socketio.AsyncSimpleClient()
 
 username = "<unset>"
 
@@ -28,18 +29,19 @@ else:
     SOCKET_DEBUG = False
 
 
-def read(f: str):
-    fh = open(f)
-    d = fh.read()
-    fh.close()
+async def read(f: str):
+    fh = await aiofiles.open(f)
+    d = await fh.read()
+    await fh.close()
     return d
 
 
-def main_menu():
+async def main_menu():
     clear()
     print(colorama.Fore.CYAN + "MiningAway 2 Electric Boogaloo".center(th()))
     print(
-        colorama.Fore.YELLOW + random.choice(read("splash.txt").split("\n")).rjust(th())
+        colorama.Fore.YELLOW
+        + random.choice((await read("splash.txt")).split("\n")).rjust(th())
     )
     print()
     print("[ Play ]".center(th()))
@@ -50,16 +52,16 @@ def main_menu():
         inp = input("% ").lower()
         match inp:
             case "play":
-                play()
+                await play()
                 break
             case "settings":
-                settings()
+                await settings()
                 break
             case "exit":
                 exit()
 
 
-def play():
+async def play():
     global is_local
     print(colorama.Fore.BLUE + "< Play")
     print(
@@ -68,17 +70,17 @@ def play():
     )
     world_name = input(": ")
 
-    def load(data: IslandData):
+    async def load(data: IslandData):
         global currentserverid, world_data
         world_data = data
         currentserverid = world_name
-        game()
+        await game()
 
     if world_name == "@":
         world_name = "!localhost:9211"
     if world_name.startswith("!"):
         try:
-            sio.connect(f"http://{world_name.replace('!', '')}")
+            await sio.connect(f"http://{world_name.replace('!', '')}")
         except socketio.exceptions.ConnectionError as e:  # type: ignore
             simplified_str = "unknown"
             estr = str(e)
@@ -87,62 +89,66 @@ def play():
             else:
                 simplified_str = estr
             print(f"> Connection failed: {simplified_str}")
-        game()
+        await game()
     if not os.path.exists(f"islands/{world_name}"):
         create_island(world_name)
-        load(DEFAULT_DATA)
+        await load(DEFAULT_DATA)
     else:
         if not os.path.exists(f"islands/{world_name}/data.json"):
             print(colorama.Fore.RED + "> Save file is corrupt\n(Data not found)")
-            main_menu()
+            await sleep(2)
+            await main_menu()
         f = open(f"islands/{world_name}/data.json")
         daytar = json.load(f)
         f.close()
-        load(daytar)
+        await load(daytar)
         is_local = True
 
 
-def settings():
+async def settings():
     pass
 
 
-def game():
+async def game():
     global world_data
     # world_data.update(
     #     {"test": DEFAULT_DATA}
     # )  # TODO: replace this with grabbing server data or socket or smth whatever
     # sio.connect("http://localhost:9211")
+    if sio.client == None:
+        print("> Client didn't load")
+        await sleep(2)
+        await main_menu()
+        return
     if not is_local:
         try:
-            sio.emit("RefreshData", {"all": True})
+            await sio.emit("RefreshData", {"all": True})
+            world_data = (await sio.receive(20))[1]
         except socketio.exceptions.BadNamespaceError:  # type: ignore
             print("> Failed to connect to server")
-            sleep(2)
-            main_menu()
+            await sleep(2)
+            await main_menu()
+            return
+        except socketio.exceptions.TimeoutError:  # type: ignore
+            print("> Server didn't respond in time")
+            await sleep(2)
+            await main_menu()
             return
 
-        @sio.on("RefreshData")
-        def temprd(d: IslandData):
-            # nonlocal pause
-            # if SOCKET_DEBUG:
-            #     print(f"AllRefreshData: {d}")
-            #     input()
-            global world_data
-            world_data = d
-
-    sio.emit("PlayerConnect", username)
+    await sio.emit("PlayerConnect", username)
 
     print("Loading...")
-    sleep(1)
+    await sleep(1)
 
     if world_data == None:
         print("> World data doesn't exist")
-        main_menu()
+        await sleep(2)
+        await main_menu()
         return  # doesn't do anything im pretty sure but because type checker
     data = world_data
 
-    @sio.on("PlayerResourceChange")
-    def plr_rc(d: dict):
+    @sio.client.on("PlayerResourceChange")
+    async def plr_rc(d: dict):
         nonlocal pause
         if SOCKET_DEBUG:
             pause = True
@@ -154,8 +160,8 @@ def game():
         else:
             data["materials"][d["resource"]] = d["to"]
 
-    @sio.on("PlayerConnect")
-    def plr_cn(d: dict):
+    @sio.client.on("PlayerConnect")
+    async def plr_cn(d: dict):
         nonlocal pause
         if SOCKET_DEBUG:
             pause = True
@@ -169,8 +175,8 @@ def game():
         print_txt = f"{d['who']} joined the game"
         wait_ticks = 10
 
-    @sio.on("PlayerDisconnect")
-    def plr_dcn(d: dict):
+    @sio.client.on("PlayerDisconnect")
+    async def plr_dcn(d: dict):
         nonlocal pause
         if SOCKET_DEBUG:
             pause = True
@@ -181,11 +187,11 @@ def game():
         if d["state"] == "error":
             return
         if d["state"] == "host":
-            sio.disconnect()
+            await sio.disconnect()
             kill = True
             print("> Host disconnected")
-            sleep(2)
-            main_menu()
+            await sleep(2)
+            await main_menu()
             return
         try:
             data["players"].remove(d["who"])
@@ -201,7 +207,8 @@ def game():
     pause: bool = False
     kill: bool = False
 
-    def open_menu():
+    async def open_menu():
+        kb.clear_all_hotkeys()
         nonlocal pause, kill
         pause = True
         clear()
@@ -222,27 +229,27 @@ def game():
                     break
                 case "settings":
                     kill = True
-                    sleep(0.2)
-                    settings()
+                    await sleep(0.2)
+                    await settings()
                     break
                 case "disconnect":
                     kill = True
-                    sleep(0.2)
-                    main_menu()
+                    await sleep(0.2)
+                    await main_menu()
                     break
 
-    kb.register_hotkey("m", open_menu, suppress=True)
+    kb.register_hotkey("m", lambda: run(open_menu()))
 
     while True:
         if pause:
             continue
         if kill:
             kb.clear_all_hotkeys()
-            sio.emit("PlayerDisconnect", username)
-            sio.disconnect()
+            await sio.emit("PlayerDisconnect", username)
+            await sio.disconnect()
             data["players"].remove(username)
             print("Disconnecting...")
-            sleep(1)
+            await sleep(1)
             break
         timer += 1
         clear()
@@ -252,12 +259,9 @@ def game():
         if wait_ticks > 0:
             wait_ticks -= 1
         if print_txt:
-            if wait_ticks == 0:
-                print_txt = None
-                continue
             print(print_txt)
         print(f"{colorama.Fore.GREEN}Money = {data['money']}$")
-        sleep(TICK_DELAY)
+        await sleep(TICK_DELAY)
 
 
 username = input("Insert username: ")
@@ -266,4 +270,4 @@ if len(username) > 16 or len(username) < 4 or username == "<unset>":
         "> Invalid username (must be longer than 3 characters, must be shorter than 16 characters)"
     )
     quit()
-main_menu()
+run(main_menu())
