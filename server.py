@@ -2,13 +2,15 @@ from json import load
 from os.path import exists
 from threading import Thread
 from time import sleep
+from aiohttp import web
 import eventlet
 import socketio
 from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island
 
 sio = socketio.AsyncServer()
-app = socketio.ASGIApp(sio)
+app = web.Application()
+sio.attach(app)
 
 TICK_DELAY = 0.2
 game_thread: Thread | None = None
@@ -131,4 +133,5 @@ async def disconnect(sid):
         await proper_disconnect(user)
 
 
-eventlet.wsgi.server(eventlet.listen(("", 9211)), app)  # type: ignore
+# eventlet.asgi.server(eventlet.listen(("", 9211)), app)  # type: ignore
+web.run_app(app, port=9211)

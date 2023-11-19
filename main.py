@@ -16,6 +16,7 @@ clear = lambda: os.system("cls") if os.name == "nt" else os.system("clear")
 world_data: IslandData | None = None  # Server Id, Data
 currentserverid: str = "test"
 is_local: bool = False
+is_return: bool = False  # returned from disconnect
 
 TICK_DELAY = 0.2
 
@@ -47,7 +48,9 @@ async def main_menu():
     print("[ Play ]".center(th()))
     print("[ Settings ]".center(th()))
     print()
-    print(colorama.Fore.RED + "[ Exit ]".center(th()))
+    print(
+        colorama.Fore.RED + f"[ Exit{' (CTRL+C)' if is_return else ''} ]".center(th())
+    )
     while True:
         inp = input("% ").lower()
         match inp:
@@ -58,7 +61,10 @@ async def main_menu():
                 await settings()
                 break
             case "exit":
-                exit()
+                if not is_return:
+                    exit()
+                else:
+                    print(colorama.Fore.RED + "Use CTRL+C instead (it's broken)")
 
 
 async def play():
@@ -226,6 +232,7 @@ async def game():
             match inp:
                 case "resume":
                     pause = False
+                    kb.register_hotkey("m", lambda: run(open_menu()), suppress=True)
                     break
                 case "settings":
                     kill = True
@@ -238,7 +245,7 @@ async def game():
                     await main_menu()
                     break
 
-    kb.register_hotkey("m", lambda: run(open_menu()))
+    kb.register_hotkey("m", lambda: run(open_menu()), suppress=True)
 
     while True:
         if pause:
