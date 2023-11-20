@@ -65,6 +65,8 @@ async def main_menu():
                     exit()
                 else:
                     print(colorama.Fore.RED + "Use CTRL+C instead (it's broken)")
+                    if input("try anyway? ") == "y":
+                        exit()
 
 
 async def play():
@@ -142,9 +144,22 @@ async def game():
             return
 
     await sio.emit("PlayerConnect", username)
+    while True:
+        try:
+            is_done = await sio.receive(20)
+        except socketio.exceptions.TimeoutError:  # type: ignore
+            print("> Connection failed: didnt connect in time")
+            await sleep(2)
+            await main_menu()
+            return
+        if is_done[0] == "PlayerConnect" and is_done[1]["state"] == "established":
+            break
+        else:
+            print("> Connection failed: incorrect packet")
+            await sleep(TICK_DELAY)
 
-    print("Loading...")
-    await sleep(1)
+    # print("Loading...")
+    # await sleep(1)
 
     if world_data == None:
         print("> World data doesn't exist")
@@ -155,12 +170,9 @@ async def game():
 
     @sio.client.on("PlayerResourceChange")
     async def plr_rc(d: dict):
-        nonlocal pause
         if SOCKET_DEBUG:
-            pause = True
-            print(f"PlayerResourceChange: {d}")
-            input()
-            pause = False
+            nonlocal print_txt
+            print_txt = "PlayerResourceChange"
         if d["isTopLevel"]:
             data[d["resource"]] = d["to"]
         else:
@@ -216,6 +228,7 @@ async def game():
     async def open_menu():
         kb.clear_all_hotkeys()
         nonlocal pause, kill
+        global is_return
         pause = True
         clear()
         print(colorama.Fore.GREEN + "-- MENU --".center(th()))
@@ -236,16 +249,25 @@ async def game():
                     break
                 case "settings":
                     kill = True
+                    is_return = True
                     await sleep(0.2)
                     await settings()
                     break
                 case "disconnect":
                     kill = True
+                    is_return = True
                     await sleep(0.2)
                     await main_menu()
                     break
 
-    kb.register_hotkey("m", lambda: run(open_menu()), suppress=True)
+    try:
+        kb.register_hotkey("m", lambda: run(open_menu()), suppress=True)
+    except OSError:
+        print("> Please run this game with sudo (root) on Linux/MacOS")
+        await sleep(3)
+        await main_menu()
+        kill = True
+        return
 
     while True:
         if pause:
@@ -260,15 +282,16 @@ async def game():
             break
         timer += 1
         clear()
+        if print_txt:
+            print(print_txt)
         print("Connected players:")
         for i in data["players"]:
             print(f"- {i}")
-        if wait_ticks > 0:
-            wait_ticks -= 1
-        if print_txt:
-            print(print_txt)
+        # if wait_ticks > 0:
+        #     wait_ticks -= 1
         print(f"{colorama.Fore.GREEN}Money = {data['money']}$")
         await sleep(TICK_DELAY)
+    await main_menu()
 
 
 username = input("Insert username: ")

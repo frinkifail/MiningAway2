@@ -1,7 +1,7 @@
 from json import load
 from os.path import exists
 from threading import Thread
-from time import sleep
+from asyncio import run, sleep
 from aiohttp import web
 import eventlet
 import socketio
@@ -49,12 +49,13 @@ async def game_loop():
         if kill_game_loop:
             print("> killed game loop")
             break
-        island_data["money"] += 1
-        await sio.emit(
-            "PlayerResourceChange",
-            {"isTopLevel": True, "resource": "money", "to": island_data["money"]},
-        )
-        sleep(TICK_DELAY)
+        # island_data["money"] += 1
+        # await sio.emit(
+        #     "PlayerResourceChange",
+        #     {"isTopLevel": True, "resource": "money", "to": island_data["money"]},
+        # )
+        await sio.sleep()
+        await sleep(TICK_DELAY)
 
 
 @sio.event
@@ -71,7 +72,7 @@ async def login(sid, data: str):
     global game_thread
     if data == hostid:
         # sio.emit()
-        game_thread = Thread(None, game_loop, "Game Loop")
+        game_thread = Thread(None, lambda: run(game_loop()), "Game Loop")
         game_thread.start()
     if data in island_data["players"]:
         await sio.emit("PlayerConnect", {"state": "error", "error": "AlreadyInServer"})
@@ -79,6 +80,7 @@ async def login(sid, data: str):
     print(f"{data} joined le server")
     island_data["players"].append(data)
     await sio.emit("PlayerConnect", {"state": "success", "who": data})
+    await sio.emit("PlayerConnect", {"state": "established"}, room=sid)
 
 
 async def proper_disconnect(username: str):
