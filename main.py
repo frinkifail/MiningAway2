@@ -229,6 +229,10 @@ async def game():
         print_txt.update({"leftMsg": f"{d['who']} left the game"})
         wait_ticks = 10
 
+    def bind_keys():
+        kb.register_hotkey("q", lambda: run(open_menu()), suppress=True)
+        kb.register_hotkey("e", lambda: run(inventory_toggle()), suppress=True)
+
     timer = 0
     print_txt: dict[str, str] = {}
     wait_ticks = 0
@@ -241,6 +245,7 @@ async def game():
         nonlocal pause, kill
         global is_return
         pause = True
+        await sleep(TICK_DELAY)
         clear()
         print(colorama.Fore.GREEN + "-- MENU --".center(th()))
         print()
@@ -256,18 +261,18 @@ async def game():
             match inp:
                 case "resume":
                     pause = False
-                    kb.register_hotkey("m", lambda: run(open_menu()), suppress=True)
+                    bind_keys()
                     break
                 case "settings":
                     kill = True
                     is_return = True
-                    await sleep(0.2)
+                    await sleep(TICK_DELAY)
                     await settings()
                     break
                 case "disconnect":
                     kill = True
                     is_return = True
-                    await sleep(0.2)
+                    await sleep(TICK_DELAY)
                     await main_menu()
                     break
 
@@ -279,17 +284,18 @@ async def game():
                 {
                     "inventory": f"""
 Materials:
-{"\n".join([f"{k.capitalize()}: {v}" for k,v in data['materials']])}
+{"\n".join([f"{k.capitalize()}: {v}" for k,v in data['materials'].items()])}
             """
                 }
             )
+        else:
+            del print_txt["inventory"]
 
-    kb.register_hotkey("q", lambda: run(open_menu()), suppress=True)
-    kb.register_hotkey("e", lambda: run(inventory_toggle()), suppress=True)
+    bind_keys()
 
     while True:
         if pause:
-            continue
+            pass
         if kill:
             kb.clear_all_hotkeys()
             await sio.emit("PlayerDisconnect", username)
@@ -301,14 +307,15 @@ Materials:
         timer += 1
         clear()
         if print_txt:
-            for i in print_txt:
-                print(i)
+            for v in print_txt.values():
+                print(v)
         print("Connected players:")
         for i in data["players"]:
             print(f"- {i}")
         # if wait_ticks > 0:
         #     wait_ticks -= 1
         print(f"{colorama.Fore.GREEN}Money = {data['money']}$")
+        await sio.client.sleep()
         await sleep(TICK_DELAY)
     await main_menu()
 
