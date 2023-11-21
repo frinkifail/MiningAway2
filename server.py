@@ -5,6 +5,7 @@ from asyncio import run, sleep
 from aiohttp import web
 import eventlet
 import socketio
+from internal_dontlook.miners import CoalMiner, EnergyGenerator
 from internal_dontlook.types import DEFAULT_DATA, IslandData
 from internal_dontlook.islands import create_island
 
@@ -43,9 +44,15 @@ kill_game_loop: bool = False
 sid_usernames: dict[str, str] = {}
 disconnected_properly: list[str] = []
 
+timer = 0
+
 
 async def game_loop():
     while True:
+        if timer == 1:
+            energy = EnergyGenerator(island_data)
+            miner = CoalMiner(island_data)
+            await energy.connect(miner)
         if kill_game_loop:
             print("> killed game loop")
             break
@@ -54,6 +61,16 @@ async def game_loop():
         #     "PlayerResourceChange",
         #     {"isTopLevel": True, "resource": "money", "to": island_data["money"]},
         # )
+        if timer > 1:
+            await miner.mine()  # type: ignore
+        await sio.emit(
+            "PlayerResourceChange",
+            {
+                "isTopLevel": False,
+                "resource": "coal",
+                "to": island_data["materials"]["coal"],
+            },
+        )
         await sio.sleep()
         await sleep(TICK_DELAY)
 
@@ -68,6 +85,10 @@ async def connect(sid, environ):
 
 @sio.on("PlayerConnect")
 async def login(sid, data: str):
+    if sid_usernames.__len__() == 0 and data != hostid:
+        await sio.emit(
+            "PlayerDisconnect", {"state": "error", "error": "HostNotLoggedIn"}
+        )
     sid_usernames.update({sid: data})
     global game_thread
     if data == hostid:

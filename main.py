@@ -172,7 +172,7 @@ async def game():
     async def plr_rc(d: dict):
         if SOCKET_DEBUG:
             nonlocal print_txt
-            print_txt = "PlayerResourceChange"
+            print_txt.update({"socketDebug": "PlayerResourceChange"})
         if d["isTopLevel"]:
             data[d["resource"]] = d["to"]
         else:
@@ -190,7 +190,7 @@ async def game():
         if d["state"] == "error":
             return
         data["players"].append(d["who"])
-        print_txt = f"{d['who']} joined the game"
+        print_txt.update({"joinMsg": f"{d['who']} joined the game"})
         wait_ticks = 10
 
     @sio.client.on("PlayerDisconnect")
@@ -203,7 +203,17 @@ async def game():
             pause = False
         nonlocal print_txt, wait_ticks, kill
         if d["state"] == "error":
-            return
+            match d["error"]:
+                case "NotInServer":
+                    pass
+                case "HostNotLoggedIn":
+                    print("> Host hasn't logged in yet\ntry again later")
+                    await sleep(2)
+                    await main_menu()
+                    return
+                case _:
+                    print("disconnect> Unknown error")
+                    await sleep(0.5)
         if d["state"] == "host":
             await sio.disconnect()
             kill = True
@@ -216,14 +226,15 @@ async def game():
         except ValueError:
             print("player not found")  # you have around .2 seconds to see this message
             return
-        print_txt = f"{d['who']} left the game"
+        print_txt.update({"leftMsg": f"{d['who']} left the game"})
         wait_ticks = 10
 
     timer = 0
-    print_txt: str | None = None
+    print_txt: dict[str, str] = {}
     wait_ticks = 0
     pause: bool = False
     kill: bool = False
+    inv_is_open: bool = False
 
     async def open_menu():
         kb.clear_all_hotkeys()
@@ -260,14 +271,21 @@ async def game():
                     await main_menu()
                     break
 
-    try:
-        kb.register_hotkey("m", lambda: run(open_menu()), suppress=True)
-    except OSError:
-        print("> Please run this game with sudo (root) on Linux/MacOS")
-        await sleep(3)
-        await main_menu()
-        kill = True
-        return
+    async def inventory_toggle():
+        nonlocal inv_is_open, print_txt
+        inv_is_open = not inv_is_open
+        if inv_is_open:
+            print_txt.update(
+                {
+                    "inventory": f"""
+Materials:
+{"\n".join([f"{k.capitalize()}: {v}" for k,v in data['materials']])}
+            """
+                }
+            )
+
+    kb.register_hotkey("q", lambda: run(open_menu()), suppress=True)
+    kb.register_hotkey("e", lambda: run(inventory_toggle()), suppress=True)
 
     while True:
         if pause:
@@ -283,7 +301,8 @@ async def game():
         timer += 1
         clear()
         if print_txt:
-            print(print_txt)
+            for i in print_txt:
+                print(i)
         print("Connected players:")
         for i in data["players"]:
             print(f"- {i}")
