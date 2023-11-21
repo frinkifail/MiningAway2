@@ -1,6 +1,6 @@
 import os
 import json
-from .types import DEFAULT_DATA
+from .types import DEFAULT_DATA, IslandData
 
 
 def _ensurefolder():
@@ -29,5 +29,16 @@ def create_island(name: str):
 
     f = open(f"islands/{name}/data.json", "w+")
     json.dump(DEFAULT_DATA, f)
+    f.close()
+    return True
+
+
+def save_island(name: str, island_data: IslandData):
+    _ensurefolder()
+    if not os.path.exists(f"islands/{name}"):
+        print("> Island doesn't exist")
+        return False
+    f = open(f"islands/{name}/data.json", "w+")
+    json.dump(island_data, f)
     f.close()
     return True

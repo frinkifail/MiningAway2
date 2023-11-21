@@ -24,10 +24,10 @@ sio = socketio.AsyncSimpleClient()
 
 username = "<unset>"
 
-if os.path.exists("isSocketDebugEnabled"):
-    SOCKET_DEBUG = True
+if os.path.exists("isDebugEnabled"):
+    DEBUG = True
 else:
-    SOCKET_DEBUG = False
+    DEBUG = False
 
 
 async def read(f: str):
@@ -170,7 +170,7 @@ async def game():
 
     @sio.client.on("PlayerResourceChange")
     async def plr_rc(d: dict):
-        if SOCKET_DEBUG:
+        if DEBUG:
             nonlocal print_txt
             print_txt.update({"socketDebug": "PlayerResourceChange"})
         if d["isTopLevel"]:
@@ -181,7 +181,7 @@ async def game():
     @sio.client.on("PlayerConnect")
     async def plr_cn(d: dict):
         nonlocal pause
-        if SOCKET_DEBUG:
+        if DEBUG:
             pause = True
             print(f"PlayerConnect: {d}")
             input()
@@ -191,12 +191,12 @@ async def game():
             return
         data["players"].append(d["who"])
         print_txt.update({"joinMsg": f"{d['who']} joined the game"})
-        wait_ticks = 10
+        wait_ticks.update({"joinMsg": 10})
 
     @sio.client.on("PlayerDisconnect")
     async def plr_dcn(d: dict):
         nonlocal pause
-        if SOCKET_DEBUG:
+        if DEBUG:
             pause = True
             print(f"PlayerDisconnect: {d}")
             input()
@@ -227,7 +227,15 @@ async def game():
             print("player not found")  # you have around .2 seconds to see this message
             return
         print_txt.update({"leftMsg": f"{d['who']} left the game"})
-        wait_ticks = 10
+        wait_ticks.update({"leftMsg": 10})
+
+    @sio.client.on("Autosave")
+    async def autosave(msg: str | None):
+        if msg is not None:
+            print_txt.update({"autosave": "Autosaving!!"})
+        else:
+            print_txt.update({"autosave": f"Autosaving!! {msg}"})
+        wait_ticks.update({"autosave": 10})
 
     def bind_keys():
         kb.register_hotkey("q", lambda: run(open_menu()), suppress=True)
@@ -235,7 +243,7 @@ async def game():
 
     timer = 0
     print_txt: dict[str, str] = {}
-    wait_ticks = 0
+    wait_ticks: dict[str, int] = {}
     pause: bool = False
     kill: bool = False
     inv_is_open: bool = False
@@ -295,7 +303,7 @@ Materials:
 
     while True:
         if pause:
-            pass
+            continue
         if kill:
             kb.clear_all_hotkeys()
             await sio.emit("PlayerDisconnect", username)
@@ -306,6 +314,12 @@ Materials:
             break
         timer += 1
         clear()
+        for k2, v2 in wait_ticks.items():
+            if v2 > 0:
+                wait_ticks[k2] -= 1
+            else:
+                del wait_ticks[k2]
+                del print_txt[k2]
         if print_txt:
             for v in print_txt.values():
                 print(v)
@@ -315,6 +329,8 @@ Materials:
         # if wait_ticks > 0:
         #     wait_ticks -= 1
         print(f"{colorama.Fore.GREEN}Money = {data['money']}$")
+        if DEBUG:
+            print(print_txt, wait_ticks)
         await sio.client.sleep()
         await sleep(TICK_DELAY)
     await main_menu()

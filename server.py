@@ -1,40 +1,49 @@
 from json import load
 from os.path import exists
-from threading import Thread
-from asyncio import run, sleep
+from asyncio import Task, create_task, run, sleep
 from aiohttp import web
-import eventlet
 import socketio
 from internal_dontlook.miners import CoalMiner, EnergyGenerator
 from internal_dontlook.types import DEFAULT_DATA, IslandData
-from internal_dontlook.islands import create_island
+from internal_dontlook.islands import create_island, save_island
 
 sio = socketio.AsyncServer()
 app = web.Application()
 sio.attach(app)
 
 TICK_DELAY = 0.2
-game_thread: Thread | None = None
+AUTOSAVE_DELAY = 10  # seconds
+game_task: Task | None = None
+save_task: Task | None = None
 
 island_data: IslandData = None  # type: ignore
 hostid: str = "admin"
+hostsid: str | None = None
+island_name: str | None = None
 if v := input("Host Player ID (leave empty for 'admin'): "):
     hostid = v
 
 if v := input(
     "New island or load island (to create new, prefix island name with `!`): "
 ):
-    if v.startswith("!"):
-        create_island(v.replace("!", ""))
-    else:  # yes i copied this from client code
-        if not exists(f"islands/{v}/data.json"):
+
+    def loadIsland():
+        global island_data, island_name
+        island_name = v.replace("!", "")
+        if not exists(f"islands/{v.replace('!', '')}/data.json"):
             print("> Save file is corrupt\n(Data not found)")
             exit()
-        f = open(f"islands/{v}/data.json")
+        f = open(f"islands/{v.replace('!', '')}/data.json")
         island_data = load(f)
         # print(island_data)
         f.close()
         del f
+
+    if v.startswith("!"):
+        create_island(v.replace("!", ""))
+        loadIsland()
+    else:  # yes i copied this from client code
+        loadIsland()
 else:
     print("> Aborted")
     exit()
@@ -45,6 +54,24 @@ sid_usernames: dict[str, str] = {}
 disconnected_properly: list[str] = []
 
 timer = 0
+
+
+async def save_loop():  # autosave!!
+    while True:
+        if kill_game_loop:
+            print("> killed save loop")
+            break
+        if hostsid == None or island_name == None:
+            continue
+        await sio.emit(
+            "Autosave"
+        )  # other people can leave during funny autosave but if host leaves im pretty sure
+        await sio.emit(  # everything explodes
+            "Autosave", "don't leave the game.", room=hostsid
+        )
+        save_island(island_name, island_data)  # type: ignore
+        await sio.sleep()
+        await sleep(AUTOSAVE_DELAY)
 
 
 async def game_loop():
@@ -90,11 +117,12 @@ async def login(sid, data: str):
             "PlayerDisconnect", {"state": "error", "error": "HostNotLoggedIn"}
         )
     sid_usernames.update({sid: data})
-    global game_thread
+    global game_task, save_task, hostsid
     if data == hostid:
         # sio.emit()
-        game_thread = Thread(None, lambda: run(game_loop()), "Game Loop")
-        game_thread.start()
+        game_task = create_task(game_loop())
+        save_task = create_task(save_loop())
+        hostsid = sid
     if data in island_data["players"]:
         await sio.emit("PlayerConnect", {"state": "error", "error": "AlreadyInServer"})
         return
