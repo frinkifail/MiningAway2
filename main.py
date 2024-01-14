@@ -61,12 +61,7 @@ async def main_menu():
                 await settings()
                 break
             case "exit":
-                if not is_return:
-                    exit()
-                else:
-                    print(colorama.Fore.RED + "Use CTRL+C instead (it's broken)")
-                    if input("try anyway? ") == "y":
-                        exit()
+                return
 
 
 async def play():
@@ -168,74 +163,75 @@ async def game():
         return  # doesn't do anything im pretty sure but because type checker
     data = world_data
 
-    @sio.client.on("PlayerResourceChange")
-    async def plr_rc(d: dict):
-        if DEBUG:
-            nonlocal print_txt
-            print_txt.update({"socketDebug": "PlayerResourceChange"})
-        if d["isTopLevel"]:
-            data[d["resource"]] = d["to"]
-        else:
-            data["materials"][d["resource"]] = d["to"]
+    async def bind_events():
+        @sio.client.on("PlayerResourceChange")
+        async def plr_rc(d: dict):
+            if DEBUG:
+                nonlocal print_txt
+                print_txt.update({"socketDebug": "PlayerResourceChange"})
+            if d["isTopLevel"]:
+                data[d["resource"]] = d["to"]
+            else:
+                data["materials"][d["resource"]] = d["to"]
 
-    @sio.client.on("PlayerConnect")
-    async def plr_cn(d: dict):
-        nonlocal pause
-        if DEBUG:
-            pause = True
-            print(f"PlayerConnect: {d}")
-            input()
-            pause = False
-        nonlocal print_txt, wait_ticks
-        if d["state"] == "error":
-            return
-        data["players"].append(d["who"])
-        print_txt.update({"joinMsg": f"{d['who']} joined the game"})
-        wait_ticks.update({"joinMsg": 10})
+        @sio.client.on("PlayerConnect")
+        async def plr_cn(d: dict):
+            nonlocal pause
+            if DEBUG:
+                pause = True
+                print(f"PlayerConnect: {d}")
+                input()
+                pause = False
+            nonlocal print_txt, wait_ticks
+            if d["state"] == "error":
+                return
+            data["players"].append(d["who"])
+            print_txt.update({"joinMsg": f"{d['who']} joined the game"})
+            wait_ticks.update({"joinMsg": 10})
 
-    @sio.client.on("PlayerDisconnect")
-    async def plr_dcn(d: dict):
-        nonlocal pause
-        if DEBUG:
-            pause = True
-            print(f"PlayerDisconnect: {d}")
-            input()
-            pause = False
-        nonlocal print_txt, wait_ticks, kill
-        if d["state"] == "error":
-            match d["error"]:
-                case "NotInServer":
-                    pass
-                case "HostNotLoggedIn":
-                    print("> Host hasn't logged in yet\ntry again later")
-                    await sleep(2)
-                    await main_menu()
-                    return
-                case _:
-                    print("disconnect> Unknown error")
-                    await sleep(0.5)
-        if d["state"] == "host":
-            await sio.disconnect()
-            kill = True
-            print("> Host disconnected")
-            await sleep(2)
-            await main_menu()
-            return
-        try:
-            data["players"].remove(d["who"])
-        except ValueError:
-            print("player not found")  # you have around .2 seconds to see this message
-            return
-        print_txt.update({"leftMsg": f"{d['who']} left the game"})
-        wait_ticks.update({"leftMsg": 10})
+        @sio.client.on("PlayerDisconnect")
+        async def plr_dcn(d: dict):
+            nonlocal pause
+            if DEBUG:
+                pause = True
+                print(f"PlayerDisconnect: {d}")
+                input()
+                pause = False
+            nonlocal print_txt, wait_ticks, kill
+            if d["state"] == "error":
+                match d["error"]:
+                    case "NotInServer":
+                        pass
+                    case "HostNotLoggedIn":
+                        print("> Host hasn't logged in yet\ntry again later")
+                        await sleep(2)
+                        await main_menu()
+                        return
+                    case _:
+                        print("disconnect> Unknown error")
+                        await sleep(0.5)
+            if d["state"] == "host":
+                await sio.disconnect()
+                kill = True
+                print("> Host disconnected")
+                await sleep(2)
+                await main_menu()
+                return
+            try:
+                data["players"].remove(d["who"])
+            except ValueError:
+                print("player not found")  # you have around .2 seconds to see this message
+                return
+            print_txt.update({"leftMsg": f"{d['who']} left the game"})
+            wait_ticks.update({"leftMsg": 10})
 
-    @sio.client.on("Autosave")
-    async def autosave(msg: str | None):
-        if msg is not None:
-            print_txt.update({"autosave": "Autosaving!!"})
-        else:
-            print_txt.update({"autosave": f"Autosaving!! {msg}"})
-        wait_ticks.update({"autosave": 10})
+        @sio.client.on("Autosave")
+        async def autosave(msg: str | None):
+            if msg is not None:
+                print_txt.update({"autosave": "Autosaving!!"})
+            else:
+                print_txt.update({"autosave": f"Autosaving!! {msg}"})
+            wait_ticks.update({"autosave": 10})
 
     def bind_keys():
         kb.register_hotkey("q", lambda: run(open_menu()), suppress=True)
@@ -287,12 +283,13 @@ async def game():
     async def inventory_toggle():
         nonlocal inv_is_open, print_txt
         inv_is_open = not inv_is_open
+        THE_ULTIMATE_COMPATABILITY_VARIABLE = "\n"
         if inv_is_open:
             print_txt.update(
                 {
                     "inventory": f"""
 Materials:
-{"\n".join([f"{k.capitalize()}: {v}" for k,v in data['materials'].items()])}
+{THE_ULTIMATE_COMPATABILITY_VARIABLE.join([f"{k.capitalize()}: {v}" for k,v in data['materials'].items()])}
             """
                 }
             )
